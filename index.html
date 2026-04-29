@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🔐 Менеджер паролей</title>
+<style>
+:root { --bg: #f0f2f5; --card: #ffffff; --text: #333333; --text-muted: #666666; --border: #e0e0e0; --input-bg: #ffffff; --input-border: #d1d5db; --primary: #007bff; --danger: #dc3545; --success: #28a745; --warning: #ffc107; --shadow: 0 4px 12px rgba(0,0,0,0.08); --row-hover: #f8f9fa; }
+[data-theme="dark"] { --bg: #121212; --card: #1e1e1e; --text: #e0e0e0; --text-muted: #aaaaaa; --border: #333333; --input-bg: #2d2d2d; --input-border: #444444; --primary: #3399ff; --danger: #ff4d4d; --success: #4caf50; --warning: #ffca28; --shadow: 0 4px 12px rgba(0,0,0,0.5); --row-hover: #252525; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; transition: 0.3s; user-select: none; }
+.container { max-width: 800px; margin: 0 auto; }
+.card { background: var(--card); border-radius: 10px; padding: 20px; box-shadow: var(--shadow); margin-bottom: 20px; transition: 0.3s; }
+h2 { margin-top: 0; font-size: 1.2rem; color: var(--text); border-bottom: 2px solid var(--border); padding-bottom: 10px; }
+input, button { padding: 10px; margin: 5px 0; border: 1px solid var(--input-border); border-radius: 6px; width: 100%; box-sizing: border-box; font-size: 14px; background: var(--input-bg); color: var(--text); }
+button { cursor: pointer; font-weight: 600; border: none; }
+button:hover { filter: brightness(1.1); }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-success { background: var(--success); color: #fff; }
+.btn-danger { background: var(--danger); color: #fff; padding: 6px 12px; font-size: 12px; width: auto; }
+.btn-edit { background: var(--warning); color: #000; padding: 6px 12px; font-size: 12px; width: auto; }
+.row { display: grid; grid-template-columns: 1.5fr 1.5fr 2fr auto; gap: 10px; align-items: center; padding: 12px; border-bottom: 1px solid var(--border); }
+.row:hover { background: var(--row-hover); }
+.row .actions { opacity: 0; transition: 0.2s; display: flex; gap: 6px; justify-content: flex-end; }
+.row:hover .actions { opacity: 1; }
+.pwd-cell { display: flex; align-items: center; gap: 8px; }
+.pwd-mask { font-family: monospace; letter-spacing: 2px; color: var(--text-muted); }
+.hidden { display: none !important; }
+.msg { padding: 10px; border-radius: 6px; margin: 10px 0; text-align: center; font-weight: 500; }
+.msg.error { background: rgba(255,77,77,0.1); color: var(--danger); }
+.msg.success { background: rgba(76,175,80,0.1); color: var(--success); }
+.login-box { max-width: 400px; margin: 50px auto; text-align: center; }
+</style>
+</head>
+<body>
+
+<!-- 🔑 КНОПКА ТЕМЫ: жёсткие стили, чтобы точно было видно -->
+<button id="themeToggle" style="position:fixed; top:15px; right:15px; z-index:9999; width:50px; height:50px; border-radius:50%; background:var(--card); border:2px solid var(--border); color:var(--text); font-size:24px; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,0.3);">🌙</button>
+
+<div class="container">
+  <div id="loginScreen" class="login-box">
+    <div class="card">
+      <h2 style="border:none;">🔐 Вход</h2>
+      <input type="password" id="masterPass" placeholder="Введите мастер-пароль" autofocus>
+      <button class="btn-primary" onclick="login()" style="width:100%; margin-top:10px;">Разблокировать</button>
+      <div id="loginMsg" class="msg hidden"></div>
+    </div>
+  </div>
+
+  <div id="appScreen" class="hidden">
+    <div class="card">
+      <h2>➕ Добавить запись</h2>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+        <input id="svc" placeholder="Сервис (google, vk...)">
+        <input id="usr" placeholder="Логин / email">
+      </div>
+      <input id="pwd" type="password" placeholder="Пароль">
+      <button id="mainBtn" class="btn-primary" onclick="handleMainAction()" style="width:100%; margin-top:5px;">➕ Добавить</button>
+    </div>
+
+    <div class="card">
+      <h2>💾 Сохранённые пароли</h2>
+      <div id="list"></div>
+      <div id="emptyMsg" class="msg hidden" style="background:var(--row-hover); color:var(--text-muted);">Пока нет записей</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const themeBtn = document.getElementById('themeToggle');
+let isDark = localStorage.getItem('theme') === 'dark';
+function applyTheme() {
+  document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  themeBtn.textContent = isDark ? '☀️' : '🌙';
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+}
+applyTheme();
+themeBtn.onclick = function() { isDark = !isDark; applyTheme(); };
+
+let entries = [];
+let editingIndex = -1;
+function escapeHtml(t){ const d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
+function showMsg(id,t,type){ const e=document.getElementById(id); e.textContent=t; e.className='msg '+type; e.classList.remove('hidden'); setTimeout(()=>e.classList.add('hidden'),3000); }
+async function login(){
+  const pass=document.getElementById('masterPass').value;
+  if(!pass) return showMsg('loginMsg','Введите пароль','error');
+  const res=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({Password:pass})});
+  if(res.ok){ document.getElementById('loginScreen').classList.add('hidden'); document.getElementById('appScreen').classList.remove('hidden'); loadEntries(); } else showMsg('loginMsg','Неверный пароль','error');
+}
+async function loadEntries(){
+  const res=await fetch('/api/entries'); if(!res.ok) return; const data=await res.json(); entries=data.entries||[]; render();
+}
+function render(){
+  const list=document.getElementById('list'), empty=document.getElementById('emptyMsg'); list.innerHTML='';
+  if(!entries.length){ empty.classList.remove('hidden'); return; } empty.classList.add('hidden');
+  entries.forEach((e,i)=>{
+    list.innerHTML+=`<div class="row"><span><b>${escapeHtml(e.service)}</b></span><span>${escapeHtml(e.username)}</span><div class="pwd-cell"><span class="pwd-mask">••••••••</span><span class="pwd-real hidden">${escapeHtml(e.password)}</span><button class="btn-edit" style="padding:4px 8px;" onclick="togglePwd(this)">👁</button></div><div class="actions"><button class="btn-edit" onclick="edit(${i})">✏️</button><button class="btn-danger" onclick="del(${i})">🗑</button></div></div>`;
+  });
+}
+function togglePwd(btn){ const c=btn.parentElement,m=c.querySelector('.pwd-mask'),r=c.querySelector('.pwd-real'); if(r.classList.contains('hidden')){r.classList.remove('hidden');m.classList.add('hidden');btn.textContent='🙈';}else{r.classList.add('hidden');m.classList.remove('hidden');btn.textContent='👁';} }
+function edit(i){ const e=entries[i]; document.getElementById('svc').value=e.service; document.getElementById('usr').value=e.username; document.getElementById('pwd').value=e.password; editingIndex=i; const b=document.getElementById('mainBtn'); b.textContent='💾 Сохранить'; b.className='btn-success'; document.getElementById('svc').focus(); }
+async function del(i){ if(!confirm('Удалить?')) return; await fetch('/api/entries',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:i})}); loadEntries(); if(editingIndex===i) cancelEdit(); }
+function cancelEdit(){ editingIndex=-1; document.getElementById('svc').value=''; document.getElementById('usr').value=''; document.getElementById('pwd').value=''; const b=document.getElementById('mainBtn'); b.textContent='➕ Добавить'; b.className='btn-primary'; }
+async function handleMainAction(){
+  const s=document.getElementById('svc').value.trim(),u=document.getElementById('usr').value.trim(),p=document.getElementById('pwd').value.trim();
+  if(!s||!u||!p){alert('Заполните все поля');return;}
+  if(editingIndex>=0){await fetch('/api/entries',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:editingIndex,service:s,username:u,password:p})});cancelEdit();}
+  else{await fetch('/api/entries',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({service:s,username:u,password:p})});cancelEdit();}
+  loadEntries();
+}
+</script>
+</body>
+</html>
